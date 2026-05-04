@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server"
 import ConnectDB from "../../../lib/config/db"
-import { writeFile } from "fs/promises";
 import BlogModel from "../../../lib/models/BlogModel";
-import fs from 'fs'
+import cloudinary from "../../../lib/config/cloudinary";
 
 const LoadDB = async () => {
     await ConnectDB();
@@ -36,11 +35,14 @@ export async function POST(request) {
     const imageByteData = await image.arrayBuffer();
     const buffer = Buffer.from(imageByteData);
 
-    const path = `./public/${timestamp}_${image.name}`;
-    await writeFile(path, buffer);
+    const uploadResponse = await new Promise((resolve, reject) => {
+        cloudinary.uploader.upload_stream({ resource_type: "auto" }, (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+        }).end(buffer);
+    });
 
-    const imgUrl = `/${timestamp}_${image.name}`;
-
+    const imgUrl = uploadResponse.secure_url;
 
 
     const blogData = {
@@ -65,7 +67,10 @@ export async function POST(request) {
 export async function DELETE(request) {
     const id = request.nextUrl.searchParams.get('id');
     const blog = await BlogModel.findById(id);
-    fs.unlink(`./public${blog.image}`, () => { });
+
+    const publicId = blog.image.split('/').pop().split('.')[0];
+    await cloudinary.uploader.destroy(publicId);
+
     await BlogModel.findByIdAndDelete(id);
     return NextResponse.json({ msg: "Blog Deleted" });
 }

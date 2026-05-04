@@ -29,6 +29,6 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-  ],
+, "app/blogs/[id]/page.jsx", "components/Header.jsx", "components/Footer.jsx", "components/BlogItem.jsx", "components/BlogList.jsx"  ],
   "exclude": ["node_modules"]
 }
