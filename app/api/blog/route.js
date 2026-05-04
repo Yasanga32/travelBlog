@@ -28,49 +28,73 @@ export async function GET(request) {
 
 //api endpoint for upload blogs
 export async function POST(request) {
-    const formData = await request.formData();
-    const timestamp = Date.now();
+    try {
+        const formData = await request.formData();
+        
+        const image = formData.get('image');
+        if (!image) {
+            return NextResponse.json({ success: false, msg: "No image provided" }, { status: 400 });
+        }
 
-    const image = formData.get('image');
-    const imageByteData = await image.arrayBuffer();
-    const buffer = Buffer.from(imageByteData);
+        const imageByteData = await image.arrayBuffer();
+        const buffer = Buffer.from(imageByteData);
 
-    const uploadResponse = await new Promise((resolve, reject) => {
-        cloudinary.uploader.upload_stream({ resource_type: "auto" }, (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-        }).end(buffer);
-    });
+        const uploadResponse = await new Promise((resolve, reject) => {
+            cloudinary.uploader.upload_stream({ resource_type: "auto" }, (error, result) => {
+                if (error) {
+                    console.error("Cloudinary upload error:", error);
+                    reject(error);
+                }
+                else resolve(result);
+            }).end(buffer);
+        });
 
-    const imgUrl = uploadResponse.secure_url;
+        const imgUrl = uploadResponse.secure_url;
 
+        const blogData = {
+            title: `${formData.get('title')}`,
+            description: `${formData.get('description')}`,
+            category: `${formData.get('category')}`,
+            author: `${formData.get('author')}`,
+            image: `${imgUrl}`,
+            authorImg: `${formData.get('authorImg')}`
+        }
 
-    const blogData = {
-        title: `${formData.get('title')}`,
-        description: `${formData.get('description')}`,
-        category: `${formData.get('category')}`,
-        author: `${formData.get('author')}`,
-        image: `${imgUrl}`,
-        authorImg: `${formData.get('authorImg')}`
+        await BlogModel.create(blogData);
+        console.log("Blog created successfully", blogData);
+
+        return NextResponse.json({ success: true, msg: "Blog Added" })
+    } catch (error) {
+        console.error("Error adding blog:", error);
+        return NextResponse.json({ success: false, msg: "Failed to add blog" }, { status: 500 });
     }
-
-    await BlogModel.create(blogData);
-    console.log("Blog created successfully", blogData);
-
-
-    return NextResponse.json({ success: true, msg: "Blog Added" })
-
 }
 
 // Creating API Endpoint to delete Blog
-
 export async function DELETE(request) {
-    const id = request.nextUrl.searchParams.get('id');
-    const blog = await BlogModel.findById(id);
+    try {
+        const id = request.nextUrl.searchParams.get('id');
+        const blog = await BlogModel.findById(id);
 
-    const publicId = blog.image.split('/').pop().split('.')[0];
-    await cloudinary.uploader.destroy(publicId);
+        if (!blog) {
+            return NextResponse.json({ success: false, msg: "Blog not found" }, { status: 404 });
+        }
 
-    await BlogModel.findByIdAndDelete(id);
-    return NextResponse.json({ msg: "Blog Deleted" });
+        // Only try to delete from Cloudinary if it's a Cloudinary URL
+        if (blog.image && blog.image.includes('res.cloudinary.com')) {
+            try {
+                const publicId = blog.image.split('/').pop().split('.')[0];
+                await cloudinary.uploader.destroy(publicId);
+            } catch (clError) {
+                console.error("Cloudinary delete error:", clError);
+                // Continue with DB deletion even if Cloudinary fails
+            }
+        }
+
+        await BlogModel.findByIdAndDelete(id);
+        return NextResponse.json({ success: true, msg: "Blog Deleted" });
+    } catch (error) {
+        console.error("Error deleting blog:", error);
+        return NextResponse.json({ success: false, msg: "Failed to delete blog" }, { status: 500 });
+    }
 }
