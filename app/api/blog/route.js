@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import ConnectDB from "../../../lib/config/db"
 import BlogModel from "../../../lib/models/BlogModel";
 import cloudinary from "../../../lib/config/cloudinary";
+import { getAuthContext, isAdmin } from "../../../lib/config/auth";
 
 const LoadDB = async () => {
     await ConnectDB();
@@ -12,23 +13,40 @@ LoadDB();
 
 //api endpoint to get all blogs
 export async function GET(request) {
+    try {
+        const { appId, error } = getAuthContext(request);
+        if (error) return error;
 
-    const blogId = request.nextUrl.searchParams.get("id");
-    if (blogId) {
-        const blog = await BlogModel.findById(blogId);
-        return NextResponse.json({ blog });
-    }
-    else {
-        const blogs = await BlogModel.find({});
-        return NextResponse.json({ blogs });
-    }
+        const blogId = request.nextUrl.searchParams.get("id");
 
+        if (blogId) {
+            const blog = await BlogModel.findOne({ _id: blogId, appId });
+            if (!blog) {
+                return NextResponse.json({ success: false, msg: "Blog not found" }, { status: 404 });
+            }
+            return NextResponse.json({ blog });
+        }
+        else {
+            const blogs = await BlogModel.find({ appId });
+            return NextResponse.json({ blogs });
+        }
+    } catch (error) {
+        console.error("Error fetching blogs:", error);
+        return NextResponse.json({ success: false, msg: "Failed to fetch blogs" }, { status: 500 });
+    }
 }
 
 
 //api endpoint for upload blogs
 export async function POST(request) {
     try {
+        const { decoded, appId, error } = getAuthContext(request);
+        if (error) return error;
+
+        if (!isAdmin(decoded)) {
+            return NextResponse.json({ success: false, msg: "Forbidden: Admin access required" }, { status: 403 });
+        }
+
         const formData = await request.formData();
         
         const image = formData.get('image');
@@ -50,6 +68,7 @@ export async function POST(request) {
         });
 
         const imgUrl = uploadResponse.secure_url;
+        const publicId = uploadResponse.public_id;
 
         const blogData = {
             title: `${formData.get('title')}`,
@@ -57,11 +76,13 @@ export async function POST(request) {
             category: `${formData.get('category')}`,
             author: `${formData.get('author')}`,
             image: `${imgUrl}`,
-            authorImg: `${formData.get('authorImg')}`
+            publicId: `${publicId}`,
+            authorImg: `${formData.get('authorImg')}`,
+            appId
         }
 
         await BlogModel.create(blogData);
-        console.log("Blog created successfully", blogData);
+        console.log("Blog created successfully for appId:", appId, blogData);
 
         return NextResponse.json({ success: true, msg: "Blog Added" })
     } catch (error) {
@@ -73,25 +94,31 @@ export async function POST(request) {
 // Creating API Endpoint to delete Blog
 export async function DELETE(request) {
     try {
+        const { decoded, appId, error } = getAuthContext(request);
+        if (error) return error;
+
+        if (!isAdmin(decoded)) {
+            return NextResponse.json({ success: false, msg: "Forbidden: Admin access required" }, { status: 403 });
+        }
+
         const id = request.nextUrl.searchParams.get('id');
-        const blog = await BlogModel.findById(id);
+        const blog = await BlogModel.findOne({ _id: id, appId });
 
         if (!blog) {
-            return NextResponse.json({ success: false, msg: "Blog not found" }, { status: 404 });
+            return NextResponse.json({ success: false, msg: "Blog not found or unauthorized" }, { status: 404 });
         }
 
         // Only try to delete from Cloudinary if it's a Cloudinary URL
-        if (blog.image && blog.image.includes('res.cloudinary.com')) {
+        if (blog.publicId) {
             try {
-                const publicId = blog.image.split('/').pop().split('.')[0];
-                await cloudinary.uploader.destroy(publicId);
+                await cloudinary.uploader.destroy(blog.publicId);
             } catch (clError) {
                 console.error("Cloudinary delete error:", clError);
                 // Continue with DB deletion even if Cloudinary fails
             }
         }
 
-        await BlogModel.findByIdAndDelete(id);
+        await BlogModel.findOneAndDelete({ _id: id, appId });
         return NextResponse.json({ success: true, msg: "Blog Deleted" });
     } catch (error) {
         console.error("Error deleting blog:", error);
