@@ -4,6 +4,8 @@ import axios from 'axios';
 import React, { useEffect, useState } from 'react'
 import { toast } from 'react-toastify';
 
+const ADMIN_SECRET = process.env.NEXT_PUBLIC_ADMIN_SECRET || 'blog_admin_secret_2024';
+
 const page = () => {
 
     const [blogs, setBlogs] = useState([]);
@@ -15,9 +17,8 @@ const page = () => {
 
     const deleteBlog = async (mongoId) => {
         const response = await axios.delete('/api/blog', {
-            params: {
-                id: mongoId
-            }
+            params: { id: mongoId },
+            headers: { 'x-admin-secret': ADMIN_SECRET }
         })
         toast.success(response.data.msg);
         fetchBlogs();
@@ -59,4 +60,4 @@ const page = () => {
     )
 }
 
-export default page
+export default page

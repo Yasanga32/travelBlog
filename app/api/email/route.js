@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import ConnectDB from "../../../lib/config/db";
 import EmailModel from "../../../lib/models/EmailModel";
-import { getAuthContext, isAdmin } from "../../../lib/config/auth";
 
 const LoadDB = async () => {
     await ConnectDB();
@@ -9,11 +8,15 @@ const LoadDB = async () => {
 
 LoadDB();
 
+// GET subscriptions - protected by admin secret
 export async function GET(request) {
     try {
-        const { appId, error } = getAuthContext(request);
-        if (error) return error;
+        const adminSecret = request.headers.get("x-admin-secret");
+        if (!adminSecret || adminSecret !== process.env.ADMIN_SECRET) {
+            return NextResponse.json({ success: false, msg: "Unauthorized" }, { status: 401 });
+        }
 
+        const appId = process.env.APP_ID || 'standalone';
         const emails = await EmailModel.find({ appId });
         return NextResponse.json({ emails });
     } catch (error) {
@@ -22,23 +25,10 @@ export async function GET(request) {
     }
 }
 
+// POST subscribe - public route
 export async function POST(request) {
     try {
-        // Public subscription route
-        let appId = process.env.APP_ID || 'standalone';
-        const authHeader = request.headers.get("authorization");
-        const token = authHeader?.split(" ")[1];
-        
-        if (token) {
-            try {
-                const jwt = require("jsonwebtoken");
-                const decoded = jwt.verify(token, process.env.JWT_SECRET);
-                if (decoded.appId) appId = decoded.appId;
-            } catch (error) {
-                console.error("Optional token verification failed:", error.message);
-            }
-        }
-
+        const appId = process.env.APP_ID || 'standalone';
         const formData = await request.formData();
         const emailData = {
             email: `${formData.get("email")}`,
@@ -53,15 +43,15 @@ export async function POST(request) {
     }
 }
 
+// DELETE subscription - protected by admin secret
 export async function DELETE(request) {
     try {
-        const { decoded, appId, error } = getAuthContext(request);
-        if (error) return error;
-
-        if (!isAdmin(decoded)) {
-            return NextResponse.json({ success: false, msg: "Forbidden: Admin access required" }, { status: 403 });
+        const adminSecret = request.headers.get("x-admin-secret");
+        if (!adminSecret || adminSecret !== process.env.ADMIN_SECRET) {
+            return NextResponse.json({ success: false, msg: "Unauthorized" }, { status: 401 });
         }
 
+        const appId = process.env.APP_ID || 'standalone';
         const id = request.nextUrl.searchParams.get("id");
         await EmailModel.findOneAndDelete({ _id: id, appId });
         return NextResponse.json({ success: true, message: "Email Deleted" })
@@ -70,4 +60,3 @@ export async function DELETE(request) {
         return NextResponse.json({ success: false, msg: "Failed to delete email" }, { status: 500 });
     }
 }
-

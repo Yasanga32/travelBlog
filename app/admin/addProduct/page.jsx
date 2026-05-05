@@ -6,6 +6,8 @@ import Image from "next/image"
 import React, { useState } from "react"
 import { toast } from "react-toastify"
 
+const ADMIN_SECRET = process.env.NEXT_PUBLIC_ADMIN_SECRET || 'blog_admin_secret_2024';
+
 const page = () => {
 
   const [image, setImage] = useState(false)
@@ -36,7 +38,9 @@ const page = () => {
     formData.append('authorImg', data.authorImg);
     formData.append('image', image);
 
-    const response = await axios.post('/api/blog', formData);
+    const response = await axios.post('/api/blog', formData, {
+      headers: { 'x-admin-secret': ADMIN_SECRET }
+    });
     if (response.data.success) {
       toast.success(response.data.msg);
 
@@ -84,4 +88,4 @@ const page = () => {
   )
 }
 
-export default page
+export default page

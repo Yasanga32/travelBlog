@@ -2,7 +2,6 @@ import { NextResponse } from "next/server"
 import ConnectDB from "../../../lib/config/db"
 import BlogModel from "../../../lib/models/BlogModel";
 import cloudinary from "../../../lib/config/cloudinary";
-import { getAuthContext, isAdmin } from "../../../lib/config/auth";
 
 const LoadDB = async () => {
     await ConnectDB();
@@ -11,23 +10,10 @@ const LoadDB = async () => {
 LoadDB();
 
 
-//api endpoint to get all blogs
+//api endpoint to get all blogs - public route, no auth required
 export async function GET(request) {
     try {
-        let appId = process.env.APP_ID || 'standalone';
-        const authHeader = request.headers.get("authorization");
-        const token = authHeader?.split(" ")[1];
-        
-        if (token) {
-            try {
-                const jwt = require("jsonwebtoken");
-                const decoded = jwt.verify(token, process.env.JWT_SECRET);
-                if (decoded.appId) appId = decoded.appId;
-            } catch (error) {
-                console.error("Optional token verification failed:", error.message);
-            }
-        }
-
+        const appId = process.env.APP_ID || 'standalone';
         const blogId = request.nextUrl.searchParams.get("id");
 
         if (blogId) {
@@ -48,18 +34,17 @@ export async function GET(request) {
 }
 
 
-//api endpoint for upload blogs
+//api endpoint for upload blogs - protected by admin secret
 export async function POST(request) {
     try {
-        const { decoded, appId, error } = getAuthContext(request);
-        if (error) return error;
-
-        if (!isAdmin(decoded)) {
-            return NextResponse.json({ success: false, msg: "Forbidden: Admin access required" }, { status: 403 });
+        const adminSecret = request.headers.get("x-admin-secret");
+        if (!adminSecret || adminSecret !== process.env.ADMIN_SECRET) {
+            return NextResponse.json({ success: false, msg: "Unauthorized" }, { status: 401 });
         }
 
+        const appId = process.env.APP_ID || 'standalone';
         const formData = await request.formData();
-        
+
         const image = formData.get('image');
         if (!image) {
             return NextResponse.json({ success: false, msg: "No image provided" }, { status: 400 });
@@ -93,7 +78,7 @@ export async function POST(request) {
         }
 
         await BlogModel.create(blogData);
-        console.log("Blog created successfully for appId:", appId, blogData);
+        console.log("Blog created successfully for appId:", appId);
 
         return NextResponse.json({ success: true, msg: "Blog Added" })
     } catch (error) {
@@ -102,16 +87,15 @@ export async function POST(request) {
     }
 }
 
-// Creating API Endpoint to delete Blog
+// Creating API Endpoint to delete Blog - protected by admin secret
 export async function DELETE(request) {
     try {
-        const { decoded, appId, error } = getAuthContext(request);
-        if (error) return error;
-
-        if (!isAdmin(decoded)) {
-            return NextResponse.json({ success: false, msg: "Forbidden: Admin access required" }, { status: 403 });
+        const adminSecret = request.headers.get("x-admin-secret");
+        if (!adminSecret || adminSecret !== process.env.ADMIN_SECRET) {
+            return NextResponse.json({ success: false, msg: "Unauthorized" }, { status: 401 });
         }
 
+        const appId = process.env.APP_ID || 'standalone';
         const id = request.nextUrl.searchParams.get('id');
         const blog = await BlogModel.findOne({ _id: id, appId });
 
@@ -119,13 +103,11 @@ export async function DELETE(request) {
             return NextResponse.json({ success: false, msg: "Blog not found or unauthorized" }, { status: 404 });
         }
 
-        // Only try to delete from Cloudinary if it's a Cloudinary URL
         if (blog.publicId) {
             try {
                 await cloudinary.uploader.destroy(blog.publicId);
             } catch (clError) {
                 console.error("Cloudinary delete error:", clError);
-                // Continue with DB deletion even if Cloudinary fails
             }
         }
 

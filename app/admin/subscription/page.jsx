@@ -4,20 +4,23 @@ import axios from 'axios';
 import React, { useEffect, useState } from 'react'
 import { toast } from 'react-toastify';
 
+const ADMIN_SECRET = process.env.NEXT_PUBLIC_ADMIN_SECRET || 'blog_admin_secret_2024';
+
 const page = () => {
 
   const [emails, setEmails] = useState([]);
 
   const fetchEmails = async () => {
-    const response = await axios.get('/api/email');
+    const response = await axios.get('/api/email', {
+      headers: { 'x-admin-secret': ADMIN_SECRET }
+    });
     setEmails(response.data.emails);
   }
 
   const deleteEmail = async (mongoId) => {
     const response = await axios.delete('/api/email', {
-      params: {
-        id: mongoId
-      }
+      params: { id: mongoId },
+      headers: { 'x-admin-secret': ADMIN_SECRET }
     })
     if (response.data.success) {
       toast.success(response.data.message);
@@ -61,4 +64,4 @@ const page = () => {
   )
 }
 
-export default page
+export default page
