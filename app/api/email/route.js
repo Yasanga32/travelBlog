@@ -24,11 +24,20 @@ export async function GET(request) {
 
 export async function POST(request) {
     try {
-        // NOTE: In some cases, subscription might be public. 
-        // If so, we might need a public token or a different way to pass appId.
-        // Following "Always extract appId from JWT" rule here.
-        const { appId, error } = getAuthContext(request);
-        if (error) return error;
+        // Public subscription route
+        let appId = process.env.APP_ID || 'standalone';
+        const authHeader = request.headers.get("authorization");
+        const token = authHeader?.split(" ")[1];
+        
+        if (token) {
+            try {
+                const jwt = require("jsonwebtoken");
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                if (decoded.appId) appId = decoded.appId;
+            } catch (error) {
+                console.error("Optional token verification failed:", error.message);
+            }
+        }
 
         const formData = await request.formData();
         const emailData = {

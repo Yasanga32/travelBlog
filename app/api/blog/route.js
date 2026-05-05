@@ -14,8 +14,19 @@ LoadDB();
 //api endpoint to get all blogs
 export async function GET(request) {
     try {
-        const { appId, error } = getAuthContext(request);
-        if (error) return error;
+        let appId = process.env.APP_ID || 'standalone';
+        const authHeader = request.headers.get("authorization");
+        const token = authHeader?.split(" ")[1];
+        
+        if (token) {
+            try {
+                const jwt = require("jsonwebtoken");
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                if (decoded.appId) appId = decoded.appId;
+            } catch (error) {
+                console.error("Optional token verification failed:", error.message);
+            }
+        }
 
         const blogId = request.nextUrl.searchParams.get("id");
 
